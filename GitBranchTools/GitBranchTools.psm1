@@ -1,3 +1,11 @@
+function Invoke-Git {
+    param (
+        [Parameter(Mandatory, Position = 0)]
+        [string[]]$Arguments
+    )
+    & git @Arguments
+}
+
 function Rebase-AllBranchesOntoMain {
     [CmdletBinding()]
     param (
@@ -108,4 +116,77 @@ function Rebase-AllBranchesOntoMain {
     git checkout $MainBranch
 }
 
+function Rename-GitBranch {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [string]$NewName,
+
+        [switch]$Push,
+
+        [switch]$DeleteOldRemote,
+
+        [switch]$Quiet
+    )
+
+    if (-not (Test-Path ".git")) {
+        if ($Quiet) { return }
+        throw "This is not a Git repository."
+    }
+
+    # Get current branch
+    $currentBranch = Invoke-Git -Arguments @("rev-parse", "--abbrev-ref", "HEAD")
+    if (! $currentBranch) {
+        if (-not $Quiet) {
+            Write-Error "Unable to determine current branch."
+        }
+        return
+    }
+
+    if ($currentBranch -eq $NewName) {
+        if (-not $Quiet) {
+            Write-Warning "Current branch name is already '$NewName'. Nothing to do."
+        }
+        return
+    }
+
+    # Rename the branch locally
+    if (-not $Quiet) {
+        Write-Host "Renaming branch '$currentBranch' to '$NewName'..." -ForegroundColor Cyan
+    }
+    Invoke-Git -Arguments @("branch", "-m", $NewName)
+
+    if ($Push) {
+        if (-not $Quiet) {
+            Write-Host "Pushing new branch '$NewName' to origin..." -ForegroundColor Green
+        }
+        try {
+            Invoke-Git -Arguments @("push", "-u", "origin", $NewName)
+        } catch {
+            if (-not $Quiet) {
+                Write-Warning "Push failed: $_"
+            }
+        }
+
+        if ($DeleteOldRemote) {
+            if (-not $Quiet) {
+                Write-Host "Deleting old remote branch '$currentBranch'..." -ForegroundColor Yellow
+            }
+            try {
+                Invoke-Git -Arguments @("push", "origin", "--delete", $currentBranch)
+            } catch {
+                if (-not $Quiet) {
+                    Write-Warning "Failed to delete remote branch: $_"
+                }
+            }
+        }
+    }
+
+    if (-not $Quiet) {
+        Write-Host "✅ Branch successfully renamed to '$NewName'."
+    }
+}
+
+Export-ModuleMember -Function Invoke-Git
 Export-ModuleMember -Function Rebase-AllBranchesOntoMain
+Export-ModuleMember -Function Rename-GitBranch
